@@ -125,31 +125,38 @@ export function observe (value: any, asRootData: ?boolean): Observer | void {
   return ob
 }
 
-/**
- * Define a reactive property on an Object.
- */
 export function defineReactive (
   obj: Object,
   key: string,
   val: any,
   customSetter?: Function
 ) {
+
+  //  创建一个Dep实例
   const dep = new Dep()
 
+  //  Object.getOwnPropertyDescriptor获取对象上的属性描述
+  //  https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyDescriptor
   const property = Object.getOwnPropertyDescriptor(obj, key)
+
+  //  如果当前属性的描述不能被修改,直接return
   if (property && property.configurable === false) {
     return
   }
 
-  // cater for pre-defined getter/setters
+  // 拿到之前定义好的getter和setter
   const getter = property && property.get
   const setter = property && property.set
 
+  //  observe完成对当前值的监视功能
   let childOb = observe(val)
+
+  //  利用ES5中Object.defineProperty完成数据劫持
   Object.defineProperty(obj, key, {
     enumerable: true,
     configurable: true,
     get: function reactiveGetter () {
+      //  如果之前指定了getter,直接调用之前定义的
       const value = getter ? getter.call(obj) : val
       if (Dep.target) {
         dep.depend()
@@ -164,20 +171,27 @@ export function defineReactive (
     },
     set: function reactiveSetter (newVal) {
       const value = getter ? getter.call(obj) : val
-      /* eslint-disable no-self-compare */
+      //  取得原来的值和新值做比较
       if (newVal === value || (newVal !== newVal && value !== value)) {
         return
       }
-      /* eslint-enable no-self-compare */
+
+      //  如果有自定义的setter,执行自定义的setter
       if (process.env.NODE_ENV !== 'production' && customSetter) {
         customSetter()
       }
+
+      //  调用属性描述的setter方法,对新值进行
       if (setter) {
         setter.call(obj, newVal)
       } else {
         val = newVal
       }
+
+      //  重新观察新值
       childOb = observe(newVal)
+
+      //  当前dep实例下的notify
       dep.notify()
     }
   })

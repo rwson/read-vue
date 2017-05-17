@@ -1,12 +1,12 @@
-## 双向绑定实现
+## 响应式原理
 
-在上一篇前面部分贴出了上面的Vue构造器的相关代码,在构造器下面一共调用了5个方法来给```Vue.prototype```添加相关方法,关于第一个已经在前面说过,第二个方法是```stateMixin```,也就是数据绑定的相关方法,一起来看看双向绑定是实现原理:
-
-###### 双向绑定:
-
-```stateMixin```是在```/src/core/instance/state.js```里面实现的
+我们都知道Vue中是基于ES5的`Object.defineProperty`来做的数据响应,本文我们一起来分析下它里面实现原理:
 
 
+
+###### initState:
+
+```initState```是在```/src/core/instance/state.js```里面实现的
 
 ```javascript
 //	vm: Vue组件实例
@@ -348,10 +348,259 @@ export function bind (fn: Function, ctx: Object): Function {
 
 ###### initData:
 
-initData
+initData主要完成对组件中传入的data进行监视的功能
 
+```javascript
+//  vm: 组件实例
+function initData (vm: Component) {
+  let data = vm.$options.data
+  //  根据组件中的data类型来获取指定的数据
+  data = vm._data = typeof data === 'function'
+    ? getData(data, vm)
+    : data || {}
+  if (!isPlainObject(data)) {
+    data = {}
+    process.env.NODE_ENV !== 'production' && warn(
+      'data functions should return an object:\n' +
+      'https://vuejs.org/v2/guide/components.html#data-Must-Be-a-Function',
+      vm
+    )
+  }
+  const keys = Object.keys(data)
+  const props = vm.$options.props
+
+  //  获取对象所有key的长度
+  let i = keys.length
+
+  //  循环遍历
+  while (i--) {
+
+    //  判断data中是否和props有重名
+    if (props && hasOwn(props, keys[i])) {
+      process.env.NODE_ENV !== 'production' && warn(
+        `The data property "${keys[i]}" is already declared as a prop. ` +
+        `Use prop default value instead.`,
+        vm
+      )
+
+      //  判断属性名是否为以"_"或者"$"开始,如果不是,对它进行监视
+    } else if (!isReserved(keys[i])) {
+      proxy(vm, `_data`, keys[i])
+    }
+  }
+  observe(data, true)
+}
 ```
 
+
+
+###### initComputed:
+
+initComputed主要完成对组件中传入的computed进行监视的功能
+
+```javascript
+const computedWatcherOptions = { lazy: true }
+
+//  vm: 组件实例
+//  computed: 组件中传入的computed对象
+function initComputed (vm: Component, computed: Object) {
+  const watchers = vm._computedWatchers = Object.create(null)
+
+  //  枚举computed对象
+  for (const key in computed) {
+    const userDef = computed[key]
+
+    //  根据用户指定去拿getter,也就是最后用户取值时执行的函数
+    let getter = typeof userDef === 'function' ? userDef : userDef.get
+    if (process.env.NODE_ENV !== 'production') {
+      if (getter === undefined) {
+        warn(
+          `No getter function has been defined for computed property "${key}".`,
+          vm
+        )
+        getter = noop
+      }
+    }
+
+    //  每一个computed的属性都会在vm._computedWatchers中对应一个Watcher实例,Watcher后面分析
+    watchers[key] = new Watcher(vm, getter, noop, computedWatcherOptions)
+
+    // 组件原型/data/prop里有和computed出现key同名的情况
+    if (!(key in vm)) {
+      defineComputed(vm, key, userDef)
+    } else if (process.env.NODE_ENV !== 'production') {
+      if (key in vm.$data) {
+        warn(`The computed property "${key}" is already defined in data.`, vm)
+      } else if (vm.$options.props && key in vm.$options.props) {
+        warn(`The computed property "${key}" is already defined as a prop.`, vm)
+      }
+    }
+  }
+}
+```
+
+
+
+###### initWatcher:
+
+initWatcher主要处理在组件中传入的watch
+
+```javascript
+
+function initWatch (vm: Component, watch: Object) {
+  for (const key in watch) {
+    const handler = watch[key]
+    if (Array.isArray(handler)) {
+      for (let i = 0; i < handler.length; i++) {
+        createWatcher(vm, key, handler[i])
+      }
+    } else {
+      createWatcher(vm, key, handler)
+    }
+  }
+}
+
+//  vm: 组件实例
+//  key: 属性名
+function createWatcher (vm: Component, key: string, handler: any) {
+  let options
+  //  判断是否为普通对象
+  if (isPlainObject(handler)) {
+    options = handler
+    handler = handler.handler
+  }
+  if (typeof handler === 'string') {
+    handler = vm[handler]
+  }
+  vm.$watch(key, handler, options)
+}
+```
+
+好了,`initState`中主要的调用就完了,刚才说到`defineReactive`是完成响应式最主要的一个实现,我们一起看看它的实现(`/src/core/observer/index.js`):
+
+
+
+###### defineReactive:
+
+```javascript
+export function defineReactive (
+  obj: Object,
+  key: string,
+  val: any,
+  customSetter?: Function
+) {
+
+  //  创建一个Dep实例
+  const dep = new Dep()
+
+  //  Object.getOwnPropertyDescriptor获取对象上的属性描述
+  //  https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyDescriptor
+  const property = Object.getOwnPropertyDescriptor(obj, key)
+
+  //  如果当前属性的描述不能被修改,直接return
+  if (property && property.configurable === false) {
+    return
+  }
+
+  // 拿到之前定义好的getter和setter
+  const getter = property && property.get
+  const setter = property && property.set
+
+  //  observe完成对当前值的监视功能
+  let childOb = observe(val)
+
+  //  利用ES5中Object.defineProperty完成数据劫持
+  Object.defineProperty(obj, key, {
+    enumerable: true,
+    configurable: true,
+    get: function reactiveGetter () {
+      //  如果之前指定了getter,直接调用之前定义的
+      const value = getter ? getter.call(obj) : val
+      if (Dep.target) {
+        dep.depend()
+        if (childOb) {
+          childOb.dep.depend()
+        }
+        if (Array.isArray(value)) {
+          dependArray(value)
+        }
+      }
+      return value
+    },
+    set: function reactiveSetter (newVal) {
+      const value = getter ? getter.call(obj) : val
+      //  取得原来的值和新值做比较
+      if (newVal === value || (newVal !== newVal && value !== value)) {
+        return
+      }
+
+      //  如果有自定义的setter,执行自定义的setter
+      if (process.env.NODE_ENV !== 'production' && customSetter) {
+        customSetter()
+      }
+
+      //  调用属性描述的setter方法,对新值进行
+      if (setter) {
+        setter.call(obj, newVal)
+      } else {
+        val = newVal
+      }
+
+      //  重新观察新值
+      childOb = observe(newVal)
+
+      //  当前dep实例下的notify
+      dep.notify()
+    }
+  })
+}
+```
+
+
+
+```javascript
+export default class Dep {
+
+  //  静态属性,如果有的话应该是一个Watcher实例
+  static target: ?Watcher;
+
+  //  唯一的id
+  id: number;
+
+  //  订阅的watchers数组
+  subs: Array<Watcher>;
+
+  constructor () {
+    this.id = uid++
+    this.subs = []
+  }
+
+  //  添加一个订阅项
+  addSub (sub: Watcher) {
+    this.subs.push(sub)
+  }
+
+  //  删除一个订阅项
+  removeSub (sub: Watcher) {
+    remove(this.subs, sub)
+  }
+
+  depend () {
+    if (Dep.target) {
+      Dep.target.addDep(this)
+    }
+  }
+
+  //  执行每个Watcher实例下的update方法
+  notify () {
+    const subs = this.subs.slice()
+    for (let i = 0, l = subs.length; i < l; i++) {
+      subs[i].update()
+    }
+  }
+}
+
+Dep.target = null
 ```
 
 

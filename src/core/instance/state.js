@@ -104,9 +104,10 @@ function initProps (vm: Component, propsOptions: Object) {
   observerState.shouldConvert = true
 }
 
-//  组件实例
+//  vm: 组件实例
 function initData (vm: Component) {
   let data = vm.$options.data
+  //  根据组件中的data类型来获取指定的数据
   data = vm._data = typeof data === 'function'
     ? getData(data, vm)
     : data || {}
@@ -118,23 +119,29 @@ function initData (vm: Component) {
       vm
     )
   }
-  // proxy data on instance
   const keys = Object.keys(data)
   const props = vm.$options.props
+
+  //  获取对象所有key的长度
   let i = keys.length
+
+  //  循环遍历
   while (i--) {
+
+    //  判断data中是否和props有重名
     if (props && hasOwn(props, keys[i])) {
       process.env.NODE_ENV !== 'production' && warn(
         `The data property "${keys[i]}" is already declared as a prop. ` +
         `Use prop default value instead.`,
         vm
       )
+
+      //  判断属性名是否为以"_"或者"$"开始,如果不是,对它进行监视
     } else if (!isReserved(keys[i])) {
       proxy(vm, `_data`, keys[i])
     }
   }
-  // observe data
-  observe(data, true /* asRootData */)
+  observe(data, true)
 }
 
 function getData (data: Function, vm: Component): any {
@@ -148,11 +155,16 @@ function getData (data: Function, vm: Component): any {
 
 const computedWatcherOptions = { lazy: true }
 
+//  vm: 组件实例
+//  computed: 组件中传入的computed对象
 function initComputed (vm: Component, computed: Object) {
   const watchers = vm._computedWatchers = Object.create(null)
 
+  //  枚举computed对象
   for (const key in computed) {
     const userDef = computed[key]
+
+    //  根据用户指定去拿getter
     let getter = typeof userDef === 'function' ? userDef : userDef.get
     if (process.env.NODE_ENV !== 'production') {
       if (getter === undefined) {
@@ -163,12 +175,11 @@ function initComputed (vm: Component, computed: Object) {
         getter = noop
       }
     }
-    // create internal watcher for the computed property.
+
+    //  每一个computed的属性都会在vm._computedWatchers中对应一个Watcher实例,Watcher后面分析
     watchers[key] = new Watcher(vm, getter, noop, computedWatcherOptions)
 
-    // component-defined computed properties are already defined on the
-    // component prototype. We only need to define computed properties defined
-    // at instantiation here.
+    // 组件原型/data/prop里有和computed出现key同名的情况
     if (!(key in vm)) {
       defineComputed(vm, key, userDef)
     } else if (process.env.NODE_ENV !== 'production') {
