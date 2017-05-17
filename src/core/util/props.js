@@ -11,16 +11,26 @@ type PropOptions = {
   validator: ?Function
 };
 
+//  验证传入的prop和组件中定义的是否一致
+//  propOptions: 组件中关于prop的指定
+//  propsData: 实际调用时传入的prop
 export function validateProp (
   key: string,
   propOptions: Object,
   propsData: Object,
   vm?: Component
 ): any {
+
+  //  取得组件中定义的prop类型
   const prop = propOptions[key]
+
+  //  判断当前key是否在取得组件中定义的prop类型中声明
   const absent = !hasOwn(propsData, key)
+
+  //  取得外部传入的prop的具体值
   let value = propsData[key]
-  // handle boolean props
+
+  //  类型判断
   if (isType(Boolean, prop.type)) {
     if (absent && !hasOwn(prop, 'default')) {
       value = false
@@ -28,11 +38,10 @@ export function validateProp (
       value = true
     }
   }
-  // check default value
+
+  //  未传入值,取得默认值,并且对该值进行监视
   if (value === undefined) {
     value = getPropDefaultValue(vm, prop, key)
-    // since the default value is a fresh copy,
-    // make sure to observe it.
     const prevShouldConvert = observerState.shouldConvert
     observerState.shouldConvert = true
     observe(value)
@@ -152,25 +161,24 @@ function assertType (value: any, type: Function): {
   }
 }
 
-/**
- * Use function string name to check built-in types,
- * because a simple equality check will fail when running
- * across different vms / iframes.
- */
+//  调用内置的toString和正则的match取得某个函数的函数名
+//  getType(getType) -> "getType"
 function getType (fn) {
   const match = fn && fn.toString().match(/^\s*function (\w+)/)
   return match ? match[1] : ''
 }
 
 function isType (type, fn) {
+  //  fn非数组,判断函数名称是否相等
   if (!Array.isArray(fn)) {
     return getType(fn) === getType(type)
   }
+
+  //  遍历数组,一真即真
   for (let i = 0, len = fn.length; i < len; i++) {
     if (getType(fn[i]) === getType(type)) {
       return true
     }
   }
-  /* istanbul ignore next */
   return false
 }

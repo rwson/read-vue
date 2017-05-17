@@ -104,6 +104,7 @@ function initProps (vm: Component, propsOptions: Object) {
   observerState.shouldConvert = true
 }
 
+//  组件实例
 function initData (vm: Component) {
   let data = vm.$options.data
   data = vm._data = typeof data === 'function'
@@ -212,9 +213,15 @@ function createComputedGetter (key) {
   }
 }
 
+//  vm: 组件实例
+//  methods: 组件中传入的methods
 function initMethods (vm: Component, methods: Object) {
+  //  取得组件外部传入的属性
   const props = vm.$options.props
+
+  //  对组件中传入的methods进行枚举
   for (const key in methods) {
+    //  noop是一个空函数
     vm[key] = methods[key] == null ? noop : bind(methods[key], vm)
     if (process.env.NODE_ENV !== 'production') {
       if (methods[key] == null) {
@@ -224,6 +231,8 @@ function initMethods (vm: Component, methods: Object) {
           vm
         )
       }
+
+      //  防止prop和methods出现重名
       if (props && hasOwn(props, key)) {
         warn(
           `method "${key}" has already been defined as a prop.`,
